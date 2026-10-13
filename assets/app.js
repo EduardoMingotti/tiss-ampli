@@ -19,9 +19,36 @@ async function loadFinancial(){let at=demo?[{id:1,paciente:'Paciente Amplimed',g
 $('#tussSearch').oninput=e=>{let q=e.target.value.toLowerCase().trim();if(q.length<2){$('#tussResults').innerHTML='<p>Digite ao menos 2 caracteres.</p>';return}let arr=(Array.isArray(tuss)?tuss:[]).filter(x=>String(x.id).includes(q)||String(x.display_name).toLowerCase().includes(q)).slice(0,30);$('#tussResults').innerHTML=arr.map(x=>`<div class="result"><div><b>${esc(x.id)}</b><small>${esc(x.display_name)}</small></div><button class="btn secondary small" data-add-tuss="${esc(x.id)}">Adicionar</button></div>`).join('')||'<p>Nenhum resultado.</p>'};
 $('#professionalForm').onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);if(!demo){let {error}=await db.from('profissionais').insert({nome:f.get('nome'),tipo:f.get('tipo')});if(error)return alert(error.message)}e.target.reset();$('#professionalModal').close();loadProfessionals()};
 $('#ruleForm').onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);if(!demo){let {error}=await db.from('regras_repasse').insert({nome:f.get('nome'),codigo_procedimento:f.get('codigo')||null,vigencia_inicio:f.get('inicio'),vigencia_fim:f.get('fim')||null});if(error)return alert(error.message)}e.target.reset();$('#ruleModal').close();loadRules()};
-const dz=$('#dropzone'),fi=$('#xmlFile');$('#pickXml').onclick=()=>fi.click();['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>processXml(e.dataTransfer.files[0]));fi.onchange=()=>processXml(fi.files[0]);
-function text(node,name){return node.getElementsByTagNameNS('*',name)[0]?.textContent?.trim()||''}
-async function processXml(file){if(!file)return;try{let doc=new DOMParser().parseFromString(await file.text(),'application/xml');if(doc.querySelector('parsererror'))throw Error('XML inválido');let items=[...doc.getElementsByTagNameNS('*','procedimentoRealizado')];let guides=[...doc.getElementsByTagNameNS('*','guiaHonorarios')];let total=items.reduce((s,n)=>s+Number(text(n,'valorTotal')||0),0);let dates=items.map(n=>text(n,'dataExecucao')).filter(Boolean).sort();let comp=dates[0]?dates[0].slice(0,7)+'-01':null;if(demo){$('#importMsg').textContent=`Leitura concluída: ${items.length} itens e ${brl(total)}.`;return}let {data:imp,error}=await db.from('importacoes_xml').insert({nome_arquivo:file.name,competencia:comp,total_atendimentos:items.length,valor_total:total}).select().single();if(error)throw error;for(const g of guides){let proc=g.getElementsByTagNameNS('*','procedimentoRealizado')[0];if(!proc)continue;let code=text(proc,'codigoProcedimento'),desc=text(proc,'descricaoProcedimento');let {data:p}=await db.from('procedimentos').upsert({codigo:code,descricao:desc},{onConflict:'codigo'}).select().single();let profNode=proc.getElementsByTagNameNS('*','profissionais')[0];let pname=profNode?text(profNode,'nomeProfissional'):'';let {data:prof}=pname?await db.from('profissionais').upsert({nome:pname,tipo:'Importado'},{onConflict:'nome'}).select().single():{data:null};let due=(desc.match(/(\d+)\s*dias/i)||[])[1];let {data:a}=await db.from('atendimentos').insert({importacao_id:imp.id,guia:text(g,'numeroGuiaPrestador'),paciente:text(g,'nomeBeneficiario'),data_atendimento:text(proc,'dataExecucao'),pagador_id:null,procedimento_id:p?.id,valor_faturado:Number(text(proc,'valorTotal')||0),prazo_dias:due?Number(due):null}).select().single();if(a&&prof)await db.from('atendimento_participantes').insert({atendimento_id:a.id,profissional_id:prof.id,grau_participacao:text(profNode,'grauParticipacao'),nome_xml:pname})}$('#importMsg').textContent=`Importado: ${items.length} itens e ${brl(total)}.`;await loadAll()}catch(e){$('#importMsg').textContent='Erro: '+e.message}}
-$('#refreshImports').onclick=loadImports;$('#exportCsv').onclick=()=>{let lines=[['Guia','Paciente','Procedimento','Faturado','Recebido','Saldo'],...$$('#receivableRows tr').map(tr=>[...tr.cells].map(td=>td.innerText))];let csv=lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('
+const dz=$('#dropzone'),fi=$('#xmlFile');$('#pickXml').onclick=()=>fi.click();['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>processXml(e.dataTransfer.files[0]));fi.onchange=()=>processXml(fi.files[0]);$('#refreshImports').onclick=loadImports;
+
+$('#exportCsv').onclick=()=>{
+    let lines=[
+        ['Guia','Paciente','Procedimento','Faturado','Recebido','Saldo'],
+        ...$$('#receivableRows tr').map(tr=>
+            [...tr.cells].map(td=>td.innerText)
+        )
+    ];
+
+    let csv=lines
+        .map(r=>
+            r.map(v=>
+                '"' + String(v).replaceAll('"','""') + '"'
+            ).join(';')
+        )
+        .join('\n');
+
+    let a=document.createElement('a');
+
+    a.href=URL.createObjectURL(
+        new Blob(
+            ['\ufeff'+csv],
+            {type:'text/csv'}
+        )
+    );
+
+    a.download='fechamento-cardiosync.csv';
+
+    a.click();
+};$('#refreshImports').onclick=loadImports;$('#exportCsv').onclick=()=>{let lines=[['Guia','Paciente','Procedimento','Faturado','Recebido','Saldo'],...$$('#receivableRows tr').map(tr=>[...tr.cells].map(td=>td.innerText))];let csv=lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('
 ');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download='fechamento-cardiosync.csv';a.click()};
 if(db){db.auth.getSession().then(({data})=>{if(data.session)enter(data.session.user.email)})}
