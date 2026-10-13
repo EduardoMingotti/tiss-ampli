@@ -49,6 +49,12 @@ $('#exportCsv').onclick=()=>{
     a.download='fechamento-cardiosync.csv';
 
     a.click();
-};$('#refreshImports').onclick=loadImports;$('#exportCsv').onclick=()=>{let lines=[['Guia','Paciente','Procedimento','Faturado','Recebido','Saldo'],...$$('#receivableRows tr').map(tr=>[...tr.cells].map(td=>td.innerText))];let csv=lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(';')).join('
-');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download='fechamento-cardiosync.csv';a.click()};
-if(db){db.auth.getSession().then(({data})=>{if(data.session)enter(data.session.user.email)})}
+};
+
+if (db) {
+  db.auth.getSession().then(({ data }) => {
+    if (data.session) {
+      enter(data.session.user.email);
+    }
+  });
+}
